@@ -1,0 +1,270 @@
+{
+  "name": "arduino-live-diagnostics",
+  "displayName": "Arduino Live Diagnostics · 实时报错",
+  "description": "Live unsaved Arduino diagnostics, Chinese API help and beginner hardware experiment templates.",
+  "version": "0.3.0",
+  "publisher": "arduino-live-local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "arduino",
+    "diagnostics",
+    "clangd",
+    "Chinese",
+    "实时"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:cpp",
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Arduino 工具链可能执行工程内的构建命令，需信任工作区后启动。"
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "cpp",
+        "extensions": [
+          ".ino"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "arduinoLive.showDiagnostics",
+        "title": "Arduino Live: 打开实时监测面板",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "arduinoLive.showBottom",
+        "title": "Arduino Live: 显示在底部",
+        "icon": "$(layout-panel)"
+      },
+      {
+        "command": "arduinoLive.showLeft",
+        "title": "Arduino Live: 显示在左侧",
+        "icon": "$(layout-sidebar-left)"
+      },
+      {
+        "command": "arduinoLive.revealDiagnostic",
+        "title": "Arduino Live: 定位错误"
+      },
+      {
+        "command": "arduinoLive.menu",
+        "title": "Arduino Live: 实时检查菜单",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "arduinoLive.guide",
+        "title": "Arduino Live: 使用说明"
+      },
+      {
+        "command": "arduinoLive.setup",
+        "title": "Arduino Live: 配置工具和开发板"
+      },
+      {
+        "command": "arduinoLive.selectBoard",
+        "title": "Arduino Live: 选择开发板"
+      },
+      {
+        "command": "arduinoLive.restart",
+        "title": "Arduino Live: 重启实时诊断"
+      },
+      {
+        "command": "arduinoLive.showOutput",
+        "title": "Arduino Live: 查看诊断日志"
+      },
+      {
+        "command": "arduinoLive.templates",
+        "title": "Arduino Live: 打开实验模板",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "arduinoLive.functions",
+        "title": "Arduino Live: 函数与库助手",
+        "icon": "$(book)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "arduinoLive.menu",
+          "when": "view == arduinoLive.diagnosticsPanel || view == arduinoLive.diagnosticsSidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arduinoLive.showLeft",
+          "when": "view == arduinoLive.diagnosticsPanel",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arduinoLive.showBottom",
+          "when": "view == arduinoLive.diagnosticsSidebar",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "arduinoLive.menu",
+          "when": "resourceExtname == .ino",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arduinoLive.templates",
+          "when": "resourceExtname == .ino",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arduinoLive.functions",
+          "when": "resourceExtname == .ino",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "arduinoLivePanel",
+          "title": "实时监测",
+          "icon": "resources/pulse.svg"
+        }
+      ],
+      "activitybar": [
+        {
+          "id": "arduinoLiveSidebar",
+          "title": "实时监测",
+          "icon": "resources/pulse.svg"
+        }
+      ]
+    },
+    "views": {
+      "arduinoLivePanel": [
+        {
+          "id": "arduinoLive.diagnosticsPanel",
+          "name": "实时诊断",
+          "when": "arduinoLive.location == bottom",
+          "visibility": "visible",
+          "type": "webview"
+        }
+      ],
+      "arduinoLiveSidebar": [
+        {
+          "id": "arduinoLive.diagnosticsSidebar",
+          "name": "实时诊断",
+          "when": "arduinoLive.location == left",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Arduino Live Diagnostics",
+      "properties": {
+        "arduinoLive.viewLocation": {
+          "type": "string",
+          "enum": [
+            "bottom",
+            "left"
+          ],
+          "default": "bottom",
+          "scope": "window",
+          "description": "实时监测面板停靠位置：底部大面板或左侧栏。可在插件菜单中切换。"
+        },
+        "arduinoLive.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "输入时实时诊断，不依赖保存。"
+        },
+        "arduinoLive.followIdeBoard": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "在 Arduino IDE 中自动跟随顶部选择的开发板；VS Code 中仍需手动选择。"
+        },
+        "arduinoLive.fqbn": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "完整开发板标识，例如 arduino:avr:uno。请使用选择开发板命令配置。"
+        },
+        "arduinoLive.arduinoIdePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Arduino IDE 2 的安装目录，用于复用其中的工具。"
+        },
+        "arduinoLive.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "arduino-cli 可执行文件的绝对路径；留空自动查找。"
+        },
+        "arduinoLive.languageServerPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "arduino-language-server 可执行文件的绝对路径。"
+        },
+        "arduinoLive.clangdPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "clangd 可执行文件的绝对路径。"
+        },
+        "arduinoLive.espClangdPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "可选 Espressif clangd 路径；选择 ESP32 系列时留空自动安装官方校验版本。"
+        },
+        "arduinoLive.cliConfigPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "可选 Arduino CLI YAML 配置路径；留空尝试复用 Arduino IDE 配置。"
+        },
+        "arduinoLive.chineseExplanations": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "在原始诊断下附上中文解释。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/extension.js && node --check src/core.js && node --check src/tools.js && node --check src/esp-toolchain.js",
+    "package": "node scripts/package.js",
+    "test:integration": "node test/integration.js",
+    "generate:examples": "node scripts/generate-examples.js",
+    "test:templates": "node scripts/validate-templates.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.6.2",
+    "esbuild": "0.25.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zgwfxy/arduino-live-diagnostics.git"
+  },
+  "homepage": "https://github.com/zgwfxy/arduino-live-diagnostics#readme",
+  "bugs": {
+    "url": "https://github.com/zgwfxy/arduino-live-diagnostics/issues"
+  }
+}

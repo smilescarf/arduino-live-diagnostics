@@ -1,0 +1,12 @@
+node_modules/
+.tools/
+dist/
+releases/
+.pnpm-store/
+.cache/
+.state/
+.tmp/
+LOCAL-SETUP.md
+*.log
+*.pptx
+*.ppt
