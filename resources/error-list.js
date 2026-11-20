@@ -57,5 +57,5 @@ window.addEventListener('message', event => {
   render();
 });
 for (const id of ['errors', 'warnings', 'search']) byId(id).addEventListener('input', render);
-for (const id of ['board', 'functions', 'templates', 'restart']) byId(id).addEventListener('click', () => host.postMessage({ type: 'action', action: id }));
+for (const id of ['board', 'functions', 'templates', 'fragments', 'fixes', 'restart']) byId(id).addEventListener('click', () => host.postMessage({ type: 'action', action: id }));
 host.postMessage({ type: 'ready' });

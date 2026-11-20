@@ -2,7 +2,7 @@
   "name": "arduino-live-diagnostics",
   "displayName": "Arduino Live Diagnostics · 实时报错",
   "description": "Live unsaved Arduino diagnostics, Chinese API help and beginner hardware experiment templates.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "publisher": "arduino-live-local",
   "license": "MIT",
   "engines": {
@@ -95,6 +95,14 @@
         "command": "arduinoLive.functions",
         "title": "Arduino Live: 函数与库助手",
         "icon": "$(book)"
+      },
+      {
+        "command": "arduinoLive.fragments",
+        "title": "Arduino Live: 插入功能片段"
+      },
+      {
+        "command": "arduinoLive.quickFix",
+        "title": "Arduino Live: 预览当前位置修复"
       }
     ],
     "menus": {
@@ -240,6 +248,12 @@
           "default": true,
           "scope": "resource",
           "description": "在原始诊断下附上中文解释。"
+        },
+        "arduinoLive.learningSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "显示低干扰的学习建议（长延时、字面量整数除法、中断内耗时操作），与编译错误分开。"
         }
       }
     }
@@ -250,7 +264,8 @@
     "package": "node scripts/package.js",
     "test:integration": "node test/integration.js",
     "generate:examples": "node scripts/generate-examples.js",
-    "test:templates": "node scripts/validate-templates.js"
+    "test:templates": "node scripts/validate-templates.js",
+    "test:fragments": "node scripts/validate-fragments.js"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"

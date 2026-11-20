@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { includes, libraryHeaders, declarations, installLearning } = require('../src/learning');
+const { includes, includeSignature, libraryHeaders, declarations, installLearning } = require('../src/learning');
 const { templates, templateCode, supportsBoard } = require('../src/templates');
 const { availableApi } = require('../src/api-catalog');
 const { rowData } = require('../src/error-list');
@@ -42,11 +42,19 @@ test('课件板型匹配包含 FQBN 菜单选项，Uno 不混入 ESP32 专用 AP
   assert.ok(!availableApi('arduino:avr:uno').some(api => api.name === 'ledcAttach'));
   assert.ok(availableApi('esp32:esp32:esp32s3').some(api => api.name === 'ledcAttach'));
 });
+test('库移入或移出预编译头区域需刷新会话，普通正文编辑和头部空行不重启索引',()=>{
+  const a='#include <ESP32Servo.h>\nServo servo;\nvoid setup(){}\nvoid loop(){}';
+  assert.equal(includeSignature(a),includeSignature('\n// 中文\n'+a));
+  assert.equal(includeSignature(a),includeSignature(a.replace('loop(){}','loop(){servo.write(90);}')));
+  assert.notEqual(includeSignature(a),includeSignature('void setup(){}\n#include <ESP32Servo.h>\nServo servo;\nvoid loop(){}'));
+  assert.deepEqual(includes('const char *html=R"X(\n#include <Fake.h>\n)X";\n#include <Real.h>'),['Real.h']);
+});
 
 function templateHost(board, selected, destination) {
   const state = { dialogs: 0, opened: [], notices: [] };
   const disposable = () => ({ dispose() {} });
   const vscode = {
+    CodeActionKind:{QuickFix:'quickfix'},
     window: {
       showQuickPick: async items => items.find(item => item.template.id === selected),
       showOpenDialog: async () => { state.dialogs++; return [{ fsPath: destination }]; },
@@ -54,8 +62,9 @@ function templateHost(board, selected, destination) {
       showInformationMessage: async text => { state.notices.push(text); },
       showWarningMessage: async text => { state.notices.push(text); }
     },
-    languages: { registerCompletionItemProvider: disposable, registerHoverProvider: disposable },
-    workspace: { openTextDocument: async uri => uri },
+    languages: { registerCompletionItemProvider: disposable, registerHoverProvider: disposable,registerSignatureHelpProvider:disposable,registerCodeActionsProvider:disposable,createDiagnosticCollection:()=>({dispose(){},set(){},delete(){}}) },
+    commands:{registerCommand:disposable},
+    workspace: { openTextDocument: async uri => uri,registerTextDocumentContentProvider:disposable,onDidChangeTextDocument:disposable,onDidOpenTextDocument:disposable,onDidCloseTextDocument:disposable,onDidChangeConfiguration:disposable,textDocuments:[] },
     Uri: { file: fsPath => ({ fsPath }) }
   };
   return { state, learning: installLearning(vscode, { fqbn: () => board }) };

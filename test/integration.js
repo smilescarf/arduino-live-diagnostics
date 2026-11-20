@@ -14,17 +14,22 @@ const { diagnosticRange } = require('../src/diagnostic-location');
 const { documentSync } = require('../src/document-sync');
 const { prepareSource } = require('../src/source-engine');
 const { fixLocation } = require('../src/fix-location');
+const {missingDigitalWrite,compilerArgumentMessage}=require('../src/authoring-core');
+const {compilerEdits}=require('../src/edit-preview');
 
 async function main() {
-  const root = path.resolve(__dirname, '../.tmp/integration/RealtimeProbe');
+  const runDirectory=process.env.ARDUINO_INTEGRATION_RUN?'integration-'+process.env.ARDUINO_INTEGRATION_RUN.replace(/[^a-z0-9_-]/gi,'_'):'integration';
+  const root = path.resolve(__dirname, '../.tmp',runDirectory,'RealtimeProbe');
   fs.mkdirSync(root, { recursive: true });
   const file = path.join(root, 'RealtimeProbe.ino');
-  const valid = 'void setup() { int value = 0; (void)value; }\nvoid loop() {\n  int value = 100;\n  int bai = 0; // 百位计数\n  if(value > 99)\n  {\n    value = 0;\n    bai++;\n    if(bai > 9)\n      bai = 0;\n  }\n}\n'.replaceAll('\n', '\r\n');
+  let valid = 'void setup() { int value = 0; (void)value; }\nvoid loop() {\n  int value = 100;\n  int bai = 0; // 百位计数\n  if(value > 99)\n  {\n    value = 0;\n    bai++;\n    if(bai > 9)\n      bai = 0;\n  }\n}\n'.replaceAll('\n', '\r\n');
   fs.writeFileSync(file, valid);
   const tools = discoverTools({ arduinoIdePath: process.env.ARDUINO_IDE_PATH, cliPath: process.env.ARDUINO_CLI_PATH,
     languageServerPath: process.env.ARDUINO_LS_PATH, clangdPath: process.env.CLANGD_PATH, cliConfigPath: process.env.ARDUINO_CLI_CONFIG });
   assert.ok(tools.cli && tools.server && tools.clangd, '需要 Arduino IDE 2 自带的三个工具，或通过环境变量指定路径');
   const fqbn = process.env.ARDUINO_FQBN || 'arduino:avr:uno';
+  const memberPrefix=fqbn.startsWith('esp32:')?'#include <ESP32Servo.h>\nServo servo;\n':'class SketchServo { public: void write(int angle) {} void attach(int pin) {} };\nSketchServo servo;\n';
+  valid+=memberPrefix.replaceAll('\n','\r\n');fs.writeFileSync(file,valid);
   const session = sessionEnvironment(path.resolve(__dirname, '../.tmp/integration-tools'), fqbn);
   const source = await prepareSource(tools, fqbn, root, session, []);
   const child = spawn(tools.clangd, source.args, { cwd: root, env: session.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -68,6 +73,7 @@ async function main() {
         if (message.error) pending.reject(new Error(JSON.stringify(message.error))); else pending.resolve(message.result);
       }
     } else if (message.method === 'textDocument/publishDiagnostics' && path.resolve(fileURLToPath(message.params.uri)).toLowerCase() === path.resolve(fileURLToPath(uri)).toLowerCase()) {
+      fs.writeFileSync(path.join(root,'../latest-diagnostics.json'),JSON.stringify(message.params,null,2));
       diagnosticSequence++;
       for (const waiter of [...waiters]) if (diagnosticSequence > waiter.after && waiter.predicate(message.params)) {
         clearTimeout(waiter.timer); waiters.delete(waiter); waiter.resolve(message.params);
@@ -158,6 +164,7 @@ async function main() {
     const semicolonUnderline = await fixLocation({ getText: () => noSemicolon }, semicolonError, uri, async params => {
       const actions = await request('textDocument/codeAction', params);
       fs.writeFileSync(path.join(root, '../fix-actions.json'), JSON.stringify(actions, null, 2));
+      assert.ok(compilerEdits(actions,uri,7).some(a=>a.edits.some(e=>e.newText.trim()===';')), '可预览编译器分号修复，不执行编译器命令');
       return actions;
     });
     assert.ok(semicolonUnderline, '编译器修复建议应给出分号的真实位置');
@@ -165,8 +172,32 @@ async function main() {
     const semicolonRepair = waitDiagnostics(p => p.diagnostics.length === 0);
     notify('textDocument/didChange', { textDocument: { uri, version: 8 }, contentChanges: [{ range: { start: { line: 6, character: 13 }, end: { line: 6, character: 13 } }, text: ';' }] });
     await semicolonRepair;
+    // Keep the include in the body, as in this fixture's original source.
+    // Moving an include into the preamble requires a session refresh in the
+    // extension; this transport-level probe deliberately does not restart it.
+    const authoringSource='void setup() {}\n'+memberPrefix+'const int LED_PIN=4;\nvoid loop() {\n  digitalWrite(LED_PIN);\n  servo.\n}\n';
+    const parameterErrors=waitDiagnostics(p=>p.diagnostics.some(d=>/too few arguments|No matching function for call to 'digitalWrite'/i.test(d.message)));
+    notify('textDocument/didChange',{textDocument:{uri,version:9},contentChanges:[{text:authoringSource}]});
+    const parameterDiagnostic=(await parameterErrors).diagnostics.find(d=>/too few arguments|No matching function for call to 'digitalWrite'/i.test(d.message));
+    const lineOffset=authoringSource.split('\n').slice(0,parameterDiagnostic.range.start.line).reduce((n,l)=>n+l.length+1,0)+parameterDiagnostic.range.start.character;
+    assert.match(missingDigitalWrite(authoringSource,lineOffset,compilerArgumentMessage(parameterDiagnostic))?.message||'',/第 2 个参数/);
+    const memberLine=authoringSource.split('\n').findIndex(l=>l==='  servo.');
+    const complete=await request('textDocument/completion',{textDocument:{uri},position:{line:memberLine,character:8},context:{triggerKind:1}});
+    fs.writeFileSync(path.join(root,'../member-completions.json'),JSON.stringify(complete,null,2));
+    const members=Array.isArray(complete)?complete:complete.items;
+    assert.ok(members.some(i=>(i.filterText||i.label).includes('write')),'实际对象应有 write 成员补全');
+    assert.ok(members.some(i=>(i.filterText||i.label).includes('attach')),'实际对象应有 attach 成员补全');
+    const callLine=authoringSource.split('\n').findIndex(l=>l.includes('digitalWrite(LED_PIN)'));
+    const callColumn=authoringSource.split('\n')[callLine].indexOf('LED_PIN');
+    const argumentItems=await request('textDocument/completion',{textDocument:{uri},position:{line:callLine,character:callColumn},context:{triggerKind:1}});
+    assert.ok((Array.isArray(argumentItems)?argumentItems:argumentItems.items).some(i=>(i.filterText||i.label).includes('LED_PIN')),'未保存文档中定义的引脚应出现在参数补全中');
+    const signature=await request('textDocument/signatureHelp',{textDocument:{uri},position:{line:callLine,character:callColumn}});
+    assert.ok(signature?.signatures.some(s=>s.parameters.length===2),'当前核心应返回 digitalWrite 真实的两个参数');
+    const authoringRepair=waitDiagnostics(p=>p.diagnostics.length===0);
+    notify('textDocument/didChange',{textDocument:{uri,version:10},contentChanges:[{text:authoringSource.replace('digitalWrite(LED_PIN);','digitalWrite(LED_PIN,HIGH);').replace('  servo.','  servo.write(90);')}]});
+    await authoringRepair;
     assert.equal(fs.readFileSync(file, 'utf8'), valid, '磁盘上的文件不能发生变化');
-    const result = { passed: true, fqbn, initialUnsavedDetected: true, windowsLineEndings: true, savedDuringTest: false, errorLatencyMs, repairLatencyMs, syntaxLatencyMs,
+    const result = { passed: true, fqbn, initialUnsavedDetected: true, windowsLineEndings: true, savedDuringTest: false, semanticMemberCompletion:true,unsavedPinCompletion:true,coreSignatureHelp:true,missingArgumentChinese:true,compilerFixPreview:true,errorLatencyMs, repairLatencyMs, syntaxLatencyMs,
       syntaxDiagnostics: syntaxErrors.diagnostics.map(d => ({ message: d.message, line: d.range.start.line + 1 })),
       syntaxUnderline: { line: locatedSyntax.start.line + 1, startColumn: locatedSyntax.start.character + 1, endColumn: locatedSyntax.end.character + 1 },
       semicolonUnderline: { line: semicolonUnderline.start.line + 1, column: semicolonUnderline.start.character + 1 },

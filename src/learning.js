@@ -4,9 +4,22 @@ const path = require('node:path');
 const { availableApi } = require('./api-catalog');
 const { templates, templateCode, templateReadme, supportsBoard } = require('./templates');
 const { isWithin } = require('./core');
+const { installAuthoring } = require('./authoring');
+const { installFragments } = require('./code-fragments');
+const { lex } = require('./authoring-core');
 
 function includes(text) {
-  return [...text.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/^\s*#\s*include\s*[<"]([^>"\r\n]+)[>"]/gm)].map(match => match[1]);
+  return [...lex(text).mask.matchAll(/^[ \t]*#[ \t]*include\b/gm)].flatMap(m=>{
+    const header=/^[ \t]*#[ \t]*include\s*[<"]([^>"\r\n]+)[>"]/.exec(text.slice(m.index));return header?[header[1]]:[];
+  });
+}
+function includeSignature(text) {
+  const mask=lex(text).mask;let offset=0,preambleEnd=mask.length,continuation=false;
+  for(const line of mask.split('\n')){
+    if(!continuation&&line.trim()&&!/^\s*#/.test(line)){preambleEnd=offset;break;}
+    continuation=/\\\s*$/.test(line);offset+=line.length+1;
+  }
+  return includes(text).join('\n')+'\n'+[...mask.matchAll(/^[ \t]*#[ \t]*include\b/gm)].map(m=>m.index<preambleEnd?'preamble':'body').join(',');
 }
 
 function libraryHeaders(text, libraries) {
@@ -141,20 +154,8 @@ function installLearning(vscode, options) {
     }
   }
   const selector = [{ scheme: 'file', pattern: '**/*.{ino,cpp,h,hpp}' }, { scheme: 'untitled', language: 'cpp' }];
-  const completion = vscode.languages.registerCompletionItemProvider(selector, {
-    provideCompletionItems(document, position) {
-      if (document.uri.scheme === 'file' && !options.isSketch(document)) return [];
-      const before = document.lineAt(position.line).text.slice(0, position.character);
-      if (/(?:\.|->)\s*\w*$/.test(before) || /\/\//.test(before)) return [];
-      return availableApi(options.fqbn()).map(item => {
-        const result = new vscode.CompletionItem(item.name, vscode.CompletionItemKind.Function);
-        result.detail = `Arduino 入门 · ${item.signature}`;
-        result.documentation = new vscode.MarkdownString(item.description);
-        result.insertText = new vscode.SnippetString(item.snippet);
-        return result;
-      });
-    }
-  });
+  const authoring = installAuthoring(vscode, options, selector);
+  const fragments = installFragments(vscode, options, authoring.preview);
   const hover = vscode.languages.registerHoverProvider(selector, {
     provideHover(document, position) {
       if (document.uri.scheme === 'file' && !options.isSketch(document)) return undefined;
@@ -164,7 +165,8 @@ function installLearning(vscode, options) {
       return new vscode.Hover(new vscode.MarkdownString(`**Arduino 中文说明**\n\n${item.description}\n\n\`\`\`cpp\n${item.signature}\n\`\`\``), range);
     }
   });
-  return { openTemplates, openFunctions, dispose() { completion.dispose(); hover.dispose(); panel?.dispose(); } };
+  return { openTemplates, openFunctions, openFragments: fragments.open, showFixes: authoring.showFixes,
+    dispose() { authoring.dispose(); hover.dispose(); panel?.dispose(); } };
 }
 
-module.exports = { includes, libraryHeaders, declarations, compilerLibraries, installLearning };
+module.exports = { includes, includeSignature, libraryHeaders, declarations, compilerLibraries, installLearning };

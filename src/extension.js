@@ -15,9 +15,10 @@ const { createTrustGate } = require('./trust');
 const { documentSelector, documentSync } = require('./document-sync');
 const { diagnosticRange } = require('./diagnostic-location');
 const { createErrorList } = require('./error-list');
-const { installLearning, compilerLibraries, includes } = require('./learning');
+const { installLearning, compilerLibraries, includes, includeSignature } = require('./learning');
 const { prepareSource, writePrototypes } = require('./source-engine');
 const { fixLocation } = require('./fix-location');
+const { missingDigitalWrite, compilerArgumentMessage } = require('./authoring-core');
 
 const sessions = new Map();
 const preparations = new Map();
@@ -130,12 +131,12 @@ async function startDocument(document, folder, sketch) {
       middleware: {
         ...documentSync(sketch, document => {
           output.appendLine(`同步未保存文档：${document.uri.toString()}（版本 ${document.version}）`);
-          sessions.get(sketch)?.includeSignatures.set(uriKey(document.uri), includes(document.getText()).join('\n'));
+          sessions.get(sketch)?.includeSignatures.set(uriKey(document.uri), includeSignature(document.getText()));
         }, event => {
           if (sessions.get(sketch)?.client !== client) return;
           dashboard.model.markPending(event.document.uri);
           writePrototypes(source.header, sketch, vscode.workspace.textDocuments);
-          const signature = includes(event.document.getText()).join('\n');
+          const signature = includeSignature(event.document.getText());
           const entry = sessions.get(sketch);
           const key = uriKey(event.document.uri);
           if (entry.includeSignatures.get(key) !== signature) {
@@ -149,8 +150,11 @@ async function startDocument(document, folder, sketch) {
           if (uri.scheme !== 'file' || !isWithin(sketch, uri.fsPath)) return;
           const document = vscode.workspace.textDocuments.find(document => uriKey(document.uri) === uriKey(uri));
           const version = document?.version;
+          const originals=diagnostics.map(d=>client.code2ProtocolConverter.asDiagnostic(d));
           for (const diagnostic of diagnostics) {
             let located = diagnosticRange(document, diagnostic);
+            const argumentHelp=document&&missingDigitalWrite(document.getText(),document.offsetAt(diagnostic.range.start),compilerArgumentMessage(diagnostic));
+            if(argumentHelp){located={start:document.positionAt(argumentHelp.start),end:document.positionAt(argumentHelp.end)};diagnostic.message+='\n中文提示：'+argumentHelp.message;}
             if (document && String(typeof diagnostic.code === 'object' ? diagnostic.code.value : diagnostic.code).startsWith('expected_semi')) {
               try {
                 located = await fixLocation(document, diagnostic, client.code2ProtocolConverter.asUri(uri), params => client.sendRequest('textDocument/codeAction', params), client.code2ProtocolConverter.asDiagnostic(diagnostic)) || located;
@@ -163,6 +167,7 @@ async function startDocument(document, folder, sketch) {
             }
           }
           if (sessions.get(sketch)?.client !== client || (document && document.version !== version)) return;
+          sessions.get(sketch).diagnosticsCache.set(uriKey(uri), {version,records:diagnostics.map((d,i)=>({protocol:originals[i],display:d.range}))});
           if (settings(uri).chineseExplanations) {
             for (const diagnostic of diagnostics) {
               diagnostic.message = translatedMessage(diagnostic.message);
@@ -183,7 +188,7 @@ async function startDocument(document, folder, sketch) {
     }
   );
   // Register before awaiting: simultaneous open/change events must share one client.
-  const entry = { client, start: undefined, tempDir: environment.tempDir, sourceDatabase: source.database, includeSignatures: new Map(), clearTimer: () => { clearTimeout(diagnosticTimer); clearTimeout(libraryTimer); } };
+  const entry = { client, start: undefined, diagnosticsCache:new Map(), tempDir: environment.tempDir, sourceDatabase: source.database, includeSignatures: new Map(), clearTimer: () => { clearTimeout(diagnosticTimer); clearTimeout(libraryTimer); } };
   sessions.set(sketch, entry);
   client.onDidChangeState(event => {
     if (sessions.get(sketch) !== entry) return;
@@ -343,6 +348,8 @@ async function showMenu() {
     { label: '$(layout-sidebar-left) 显示在左侧', description: '停靠到侧边栏，持续查看诊断', action: () => showDiagnostics('left', true) },
     { label: '$(beaker) 实验模板', description: '课件实验、传感器、显示屏、Wi-Fi、BLE 与综合作业', action: () => learning.openTemplates() },
     { label: '$(book) 函数与库助手', description: '中文函数说明、当前包含库的声明和示例', action: () => learning.openFunctions() },
+    { label: '$(code) 插入功能片段', description: '按键消抖、millis 定时、模拟读取；预览后合并到当前代码', action: () => learning.openFragments() },
+    { label: '$(lightbulb) 预览当前位置修复', description: '在错误处按 Ctrl+. 也可查看；应用前先预览差异', action: () => learning.showFixes() },
     { label: '$(play) 开始配置 / 重新配置', description: '第一次使用点这里', action: setup },
     { label: '$(circuit-board) 选择开发板', description: config.fqbn || '尚未选择', action: selectBoard },
     { label: '$(book) 使用说明', description: '查看操作步骤和报错示例', action: showGuide },
@@ -378,6 +385,22 @@ function activate(context) {
   learning = installLearning(vscode, {
     document: () => vscode.window.activeTextEditor?.document || vscode.workspace.textDocuments.find(document => document.uri.scheme === 'file' && /\.ino$/i.test(document.fileName)),
     fqbn: () => settings(activeUri()).fqbn,
+    diagnostics: document => {
+      const folder=vscode.workspace.getWorkspaceFolder(document.uri),sketch=folder&&findSketch(document.fileName,folder.uri.fsPath);
+      const cached=sessions.get(sketch)?.diagnosticsCache.get(uriKey(document.uri));
+      return cached?.version===document.version?cached.records:[];
+    },
+    languageRequest: async (document,method,params,token) => {
+      const folder=vscode.workspace.getWorkspaceFolder(document.uri),sketch=folder&&findSketch(document.fileName,folder.uri.fsPath);
+      const entry=sessions.get(sketch),client=entry?.client;
+      if(!client?.isRunning())return; // A running session has already passed the workspace trust gate.
+      const version=document.version,protocolUri=client.code2ProtocolConverter.asUri(document.uri);
+      const raw=await client.sendRequest(method,{...params,textDocument:{uri:protocolUri}},token);
+      if(sessions.get(sketch)!==entry||document.version!==version)return;
+      const value=method==='textDocument/completion'?await client.protocol2CodeConverter.asCompletionResult(raw,undefined,token):
+        method==='textDocument/signatureHelp'?await client.protocol2CodeConverter.asSignatureHelp(raw,token):undefined;
+      return {raw,value,protocolUri};
+    },
     isSketch: document => {
       const folder = vscode.workspace.getWorkspaceFolder(document.uri);
       return Boolean(folder && findSketch(document.fileName, folder.uri.fsPath));
@@ -392,7 +415,8 @@ function activate(context) {
   });
   const errorList = createErrorList(vscode, dashboard, {
     board: safe(() => selectBoard()), functions: safe(() => learning.openFunctions()),
-    templates: safe(() => learning.openTemplates()), restart: safe(() => restart())
+    templates: safe(() => learning.openTemplates()), restart: safe(() => restart()),
+    fragments:safe(()=>learning.openFragments()),fixes:safe(()=>learning.showFixes())
   });
   const treeRefresh = dashboard.refresh;
   dashboard.refresh = () => { treeRefresh(); errorList.refresh(); };
@@ -407,6 +431,8 @@ function activate(context) {
     vscode.commands.registerCommand('arduinoLive.menu', safe(showMenu)),
     vscode.commands.registerCommand('arduinoLive.templates', safe(() => learning.openTemplates())),
     vscode.commands.registerCommand('arduinoLive.functions', safe(() => learning.openFunctions())),
+    vscode.commands.registerCommand('arduinoLive.fragments', safe(() => learning.openFragments())),
+    vscode.commands.registerCommand('arduinoLive.quickFix', safe(() => learning.showFixes())),
     vscode.commands.registerCommand('arduinoLive.guide', showGuide),
     vscode.commands.registerCommand('arduinoLive.setup', safe(setup)),
     vscode.commands.registerCommand('arduinoLive.selectBoard', safe(() => selectBoard())),

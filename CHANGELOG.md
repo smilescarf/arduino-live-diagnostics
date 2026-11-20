@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Add board-aware Chinese parameter help and real clangd completions for current unsaved buffers and library members.
+- Explain missing digitalWrite output arguments using compiler evidence, including ESP32 overload candidate notes.
+- Preview compiler edits and explicit HIGH/LOW choices; reject stale, overlapping or cross-file fixes and preserve unsaved edits.
+- Merge timer, debounced button and ADC fragments into plain setup/loop sketches with unique names and a diff preview.
+- Add optional information-level learning suggestions for blocking loop delays, literal integer division and slow ISR work.
+
 ## 0.3.1
 
 - Declare dependency build decisions for pnpm 11 so clean CI installs can proceed without an interactive approval prompt.

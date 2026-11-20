@@ -12,6 +12,7 @@ test('IDE API 迟迟未就绪时，菜单和内置使用说明仍能正常使用
   const values = { fqbn: '', enabled: false };
   const workspaceUri = { fsPath: path.resolve('.tmp/FakeSketch') };
   const vscode = {
+    CodeActionKind:{QuickFix:'quickfix'},
     EventEmitter: class { event() {} fire() {} dispose() {} },
     StatusBarAlignment: { Left: 1 }, ViewColumn: { Beside: 2 }, ProgressLocation: { Notification: 15 }, ConfigurationTarget: { WorkspaceFolder: 3 },
     window: {
@@ -23,13 +24,14 @@ test('IDE API 迟迟未就绪时，菜单和内置使用说明仍能正常使用
       showQuickPick: async items => items.find(item => item.label.includes('使用说明')) || items[0],
       createWebviewPanel: () => panel
     },
-    languages: { registerCompletionItemProvider: disposable, registerHoverProvider: disposable },
+    languages: { registerCompletionItemProvider: disposable, registerHoverProvider: disposable,registerSignatureHelpProvider:disposable,registerCodeActionsProvider:disposable,createDiagnosticCollection:()=>({dispose(){},set(){},delete(){}}) },
     workspace: {
       isTrusted: false,
       textDocuments: [], workspaceFolders: [{ uri: workspaceUri }],
       getWorkspaceFolder: () => ({ uri: workspaceUri }),
       getConfiguration: () => ({ get: key => values[key], update: async (key, value) => { values[key] = value; } }),
       onDidOpenTextDocument: disposable, onDidChangeTextDocument: disposable,
+      onDidCloseTextDocument:disposable,registerTextDocumentContentProvider:disposable,
       onDidChangeConfiguration: disposable, onDidChangeWorkspaceFolders: disposable,
       onDidGrantWorkspaceTrust: disposable
     },

@@ -15,7 +15,10 @@ function diagnosticCapabilities(capabilities) {
   const { configuration, workspaceFolders, didChangeConfiguration, didChangeWatchedFiles } = capabilities.workspace || {};
   return {
     ...capabilities,
-    textDocument: { synchronization, publishDiagnostics: { ...publishDiagnostics, versionSupport: true }, codeAction: { codeActionLiteralSupport: { codeActionKind: { valueSet: ['quickfix'] } } } },
+    textDocument: { synchronization, publishDiagnostics: { ...publishDiagnostics, versionSupport: true },
+      completion: { completionItem: { snippetSupport: true, documentationFormat: ['markdown','plaintext'] } },
+      signatureHelp: { signatureInformation: { documentationFormat: ['markdown','plaintext'], parameterInformation: { labelOffsetSupport: true } } },
+      codeAction: { codeActionLiteralSupport: { codeActionKind: { valueSet: ['quickfix'] } } } },
     workspace: { configuration, workspaceFolders, didChangeConfiguration, didChangeWatchedFiles }
   };
 }

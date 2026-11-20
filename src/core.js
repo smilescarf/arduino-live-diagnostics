@@ -7,6 +7,7 @@ function explain(message) {
   const undeclared = /(?:undeclared identifier|was not declared in this scope)\s*['‘]([^'’]+)['’]/i.exec(message);
   if (undeclared) return `名称“${undeclared[1]}”尚未声明，或当前作用域不可见。检查拼写、声明位置和必要的头文件。`;
   const rules = [
+    [/array index.*(?:bounds|past)|array bounds|array subscript.*(?:bounds|outside)/i, '数组下标超出有效范围。长度为 N 的数组只能使用 0～N-1，下标等于 N 也会越界。请检查循环条件及数组长度。'],
     [/character <U\+FF0C> not allowed/i, '代码中出现中文逗号 ，。如果这是说明文字，请在前面加 //；如果是函数参数分隔符，请使用英文逗号 ,。'],
     [/unexpected character <U\+FEFF>/i, '代码中含有不可见的 BOM 字符。请检查粘贴内容或将源文件另存为不带 BOM 的 UTF-8。'],
     [/misleading indentation/i, '缩进与实际控制范围不一致。没有花括号的 if、for、while 只控制紧随的一条语句；请对齐缩进，或用 { } 明确范围。'],
