@@ -2,7 +2,7 @@
 
 输入时诊断 **未保存** 的 Arduino 代码，显示错误位置，并附上常见错误的中文解释。
 
-**公开测试版（alpha）**：[下载安装包与 ZIP](https://github.com/zgwfxy/arduino-live-diagnostics/releases)。ZIP 内含 VSIX 插件、完整源码与中文安装说明。已验证 Windows / Arduino IDE 2.3.10；其他组合请参阅兼容性说明。
+**公开测试版（alpha）**：[下载安装包与 ZIP](https://github.com/smilescarf/arduino-live-diagnostics/releases)。ZIP 内含 VSIX 插件、完整源码与中文安装说明。下载后需解压并安装，完整步骤见 [安装说明](INSTALL.md)。已验证 Windows / Arduino IDE 2.3.10；其他组合请参阅兼容性说明。
 
 ## 0.4.0：编写代码辅助
 
@@ -99,9 +99,12 @@ ESP32 的少量 GCC 专用代码生成参数在独立临时目录内通过 `.cla
 
 Arduino IDE 基于 Theia，第三方扩展兼容性需按版本验证，不保证所有 VS Code API 都可用。
 
-1. 退出 Arduino IDE。
-2. 将发布的 `.vsix` 文件复制到 `~/.arduinoIDE/plugins/`；Windows 对应 `%USERPROFILE%\.arduinoIDE\plugins\`。
-3. 重新启动 IDE，打开 sketch，按 `Ctrl+Shift+P` 搜索 `Arduino Live` 命令进行配置。
+1. 保留需要的编辑，退出 Arduino IDE，将下载的 ZIP 解压。
+2. Windows 下按 `Win + E` 打开文件资源管理器，按 `Ctrl + L` 选中顶部地址栏，粘贴 `%USERPROFILE%\.arduinoIDE\plugins\` 并回车。`%USERPROFILE%` 表示当前用户的个人文件夹，例如 `C:\Users\XiaoMing`；无需替换成别人的用户名。
+3. 如果路径不存在，先打开 `%USERPROFILE%`，依次新建 `.arduinoIDE` 和其中的 `plugins` 文件夹；已有文件夹直接进入。将解压得到的 `.vsix` 文件整体复制进去，不要再解压 VSIX。升级时将同一插件的旧版 VSIX 移出备份。其他系统的目录为 `~/.arduinoIDE/plugins/`。
+4. 重新启动 IDE，打开 `.ino` 工程并选择已安装核心的开发板。等底部“实时监测”显示“已就绪”，即可直接编辑，无需保存或上传触发诊断。若未显示面板，按 `Ctrl+Shift+P` 搜索 `Arduino Live: 打开实时监测面板`。
+
+逐步说明见 [Windows 插件文件夹怎么打开](INSTALL.md#windows-插件文件夹怎么打开)。已安装同一版本时不必重复安装。
 
 移除该 `.vsix` 后重启即可卸载。安装目录依据 [Arduino IDE 高级使用文档](https://github.com/arduino/arduino-ide/blob/main/docs/advanced-usage.md#installation)，该文档以主题扩展为例；代码扩展的兼容性须单独测试。
 
