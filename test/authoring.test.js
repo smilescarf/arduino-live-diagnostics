@@ -2,7 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {lex,callContext,parameters,missingDigitalWrite,advisoryFindings}=require('../src/authoring-core');
 const {planFragment}=require('../src/code-fragments');
-const {textOffset,applyTextEdits,compilerEdits,installPreview}=require('../src/edit-preview');
+const {textOffset,applyTextEdits,compilerEdits,installPreview,reasonableSemicolonEdit}=require('../src/edit-preview');
+const {punctuationPlan}=require('../src/punctuation');
 const {availableApi}=require('../src/api-catalog');
 const {installAuthoring}=require('../src/authoring');
 class Range {
@@ -90,6 +91,36 @@ test('成员补全保留编译器语义结果，引脚变量优先，切板不�
  const stale=authoringHost(async(doc)=>{doc.version++;return {value:[{label:'old'}]};});assert.deepEqual(await stale.providers.completion.provideCompletionItems(d,d.positionAt(d.text.length)),[]);stale.authoring.dispose();
 });
 module.exports={document};
+
+test('全角括号和分号优先修为 millis();，注释、普通字符串与原始字符串保持原文',()=>{
+ const text='// millis（）；\r\nconst char *a="millis（）；";\r\nconst char *b=R"X(millis（）；)X";\r\nvoid loop(){millis（）；}\r\n';
+ const plan=punctuationPlan(text,{start:{line:3,character:18},end:{line:3,character:19}});
+ assert.equal(plan.edits.length,3);
+ assert.equal(applyTextEdits(document(text),plan.edits),text.replace('void loop(){millis（）；}','void loop(){millis();}'));
+ assert.equal(punctuationPlan('void loop(){millis();}',{start:{line:0,character:0}}),undefined);
+ assert.equal(punctuationPlan('#include <lib（v1）.h>',{start:{line:0,character:10}}),undefined);
+});
+test('过滤在现有分号旁再插分号，以及删除完整函数调用终止符的建议，保留合法 for 分隔修复',()=>{
+ const edit=(text,start,end,newText)=>({range:{start:document(text).positionAt(start),end:document(text).positionAt(end)},newText});
+ const text='void loop(){ millis(); }',at=text.indexOf(';');
+ assert.equal(reasonableSemicolonEdit(text,edit(text,at,at,';')),false);
+ assert.equal(reasonableSemicolonEdit(text,edit(text,at+1,at+1,';')),false);
+ assert.equal(reasonableSemicolonEdit(text,edit(text,at,at+1,'')),false);
+ const missing='void loop(){ millis() }';assert.equal(reasonableSemicolonEdit(missing,edit(missing,missing.indexOf(' }'),missing.indexOf(' }'),';')),true);
+ const forHeader='void loop(){for (;){}}';const semi=forHeader.indexOf(';');assert.equal(reasonableSemicolonEdit(forHeader,edit(forHeader,semi,semi,';')),true);
+ const duplicate='void loop(){millis();;}';const last=duplicate.lastIndexOf(';');assert.equal(reasonableSemicolonEdit(duplicate,edit(duplicate,last,last+1,'')),true);
+ const action={title:'insert semicolon',edit:{changes:{'file:///probe.ino':[edit(text,at,at,';')]}}};
+ assert.equal(compilerEdits([action],'file:///probe.ino',1,document(text)).length,0);
+});
+test('即使编译器建议增删分号，全角错误仅提供符号修复且不查询连带修复',async()=>{
+ const d=document('void loop(){millis（）；}');let requests=0;
+ const display=new Range(0,0,0,24),record={display,protocol:{message:'Expected semicolon',range:{start:{line:0,character:20},end:{line:0,character:21}}}};
+ const h=authoringHost(async()=>{requests++;throw Error('Should not query cascade fixes');},{diagnostics:()=>[record]});
+ const actions=await h.providers.fixes.provideCodeActions(d,display,{diagnostics:[]},{isCancellationRequested:false});
+ assert.equal(requests,0);assert.equal(actions.length,1);assert.match(actions[0].title,/全角/);
+ assert.equal(actions[0].isPreferred,true);
+ assert.equal(applyTextEdits(d,actions[0].command.arguments[0].edits),'void loop(){millis();}');h.authoring.dispose();
+});
 
 class StrictPosition {constructor(line,character){this.line=line;this.character=character;}}
 function strictDocument(text){

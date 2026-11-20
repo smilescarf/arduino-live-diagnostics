@@ -1,4 +1,5 @@
 'use strict';
+const {lex}=require('./authoring-core');
 // LSP/command arguments are plain JSON, while Theia's document.offsetAt accepts
 // only its own Position instances. Interpret protocol positions as UTF-16 text
 // offsets here rather than passing them across that API boundary.
@@ -45,16 +46,39 @@ function installPreview(vscode) {
   const command=vscode.commands.registerCommand('arduinoLive.previewFix',preview);
   return {preview,dispose(){command.dispose();content.dispose();previews.clear();}};
 }
-function compilerEdits(actions, uri, version) {
+function inForHeader(mask,offset){
+  const stack=[];for(let i=0;i<offset;i++){
+    if(mask[i]==='(')stack.push(/\bfor\s*$/.test(mask.slice(0,i)));
+    else if(mask[i]===')')stack.pop();
+  }return stack.includes(true);
+}
+function reasonableSemicolonEdit(text,change){
+  const mask=lex(text).mask,start=textOffset(text,change.range.start),end=textOffset(text,change.range.end);
+  if(inForHeader(mask,start))return true;
+  const previous=mask.slice(0,start).trimEnd(),next=mask.slice(end).trimStart();
+  if(start===end&&change.newText.trim()===';'&&(previous.endsWith(';')||next.startsWith(';')))return false;
+  if(!change.newText.trim()&&mask.slice(start,end).trim()===';'&&previous.endsWith(')')&&!next.startsWith(';')&&!next.startsWith('{')){
+    let depth=1,i=previous.length-2;
+    for(;i>=0;i--){if(previous[i]===')')depth++;else if(previous[i]==='('&&!--depth)break;}
+    const name=/\b(\w+)\s*$/.exec(previous.slice(0,i));
+    if(name&&!['if','for','while','switch'].includes(name[1]))return false;
+  }
+  return true;
+}
+function compilerEdits(actions, uri, version, document) {
   const found=[];
   for(const action of actions||[]){
     if(action.disabled)continue;
-    const command=action.command;
+    const command=typeof action.command==='object'?action.command:action;
     const edits=[action.edit,...(command?.command==='clangd.applyFix'?command.arguments||[]:[])].filter(Boolean);
     for(const edit of edits){
       const docs=[...Object.entries(edit.changes||{}).map(([key,edits])=>({textDocument:{uri:key},edits})),...(edit.documentChanges||[])];
       if(!docs.length||docs.some(d=>d.textDocument?.uri!==uri||!Array.isArray(d.edits)||(typeof d.textDocument.version==='number'&&d.textDocument.version!==version)))continue;
       const changes=docs.flatMap(d=>d.edits);
+      if(document){try{
+        applyTextEdits(document,changes);
+        if(changes.length===1&&!reasonableSemicolonEdit(document.getText(),changes[0]))continue;
+      }catch{continue;}}
       const rename=/(?:change|replace) ['‘]([^'’]+)['’] (?:to|with) ['‘]([^'’]+)['’]/i.exec(action.title||'');
       const title=changes.length===1&&changes[0].newText.trim()===';'?'补充分号':rename?`将“${rename[1]}”改为“${rename[2]}”`:'按编译器建议修改';
       if(changes.length)found.push({title,compilerTitle:action.title||'',edits:changes});
@@ -62,4 +86,4 @@ function compilerEdits(actions, uri, version) {
   }
   return found.filter((f,i,a)=>a.findIndex(x=>JSON.stringify(x.edits)===JSON.stringify(f.edits))===i);
 }
-module.exports={textOffset,applyTextEdits,compilerEdits,installPreview};
+module.exports={textOffset,applyTextEdits,compilerEdits,installPreview,reasonableSemicolonEdit};

@@ -3,6 +3,7 @@ const {availableApi}=require('./api-catalog');
 const {lex,callContext,parameters,compilerArgumentMessage,missingDigitalWrite,advisoryFindings}=require('./authoring-core');
 const {compilerEdits,installPreview,textOffset}=require('./edit-preview');
 const {explain}=require('./core');
+const {punctuationPlan}=require('./punctuation');
 function installAuthoring(vscode,options,selector) {
   const disposables=[],preview=installPreview(vscode);disposables.push(preview);
   const eligible=d=>d?.uri.scheme==='file'&&options.isSketch(d);
@@ -79,14 +80,17 @@ function installAuthoring(vscode,options,selector) {
     const relevant=records.filter(r=>new vscode.Range(r.display.start.line,r.display.start.character,r.display.end.line,r.display.end.character).intersection(range));
     const result=[];
     for(const record of relevant.slice(0,3)){
+      const punctuation=punctuationPlan(document.getText(),record.protocol.range);
+      if(punctuation){result.push(punctuation);continue;}
       const r=await request(document,'textDocument/codeAction',{range:record.protocol.range,context:{diagnostics:[record.protocol],only:['quickfix']}},token);
       if(document.version!==version)return [];
-      for(const f of compilerEdits(r?.raw,r?.protocolUri,version))result.push({title:'预览修复：'+f.title,reason:'修改来自当前工程的编译器建议。原始建议：'+f.compilerTitle,edits:f.edits});
+      for(const f of compilerEdits(r?.raw,r?.protocolUri,version,document))result.push({title:'预览修复：'+f.title,reason:'修改来自当前工程的编译器建议。原始建议：'+f.compilerTitle,edits:f.edits});
       const missing=missingDigitalWrite(document.getText(),textOffset(document.getText(),record.protocol.range.start),compilerArgumentMessage(record.protocol));
       if(missing)for(const level of ['HIGH','LOW'])result.push({title:`预览：补充 ${level}（${level==='HIGH'?'高':'低'}电平）`,reason:'HIGH 是高电平，LOW 是低电平，不能直接等同于开/关。请按接线和模块的有效电平选择。',edits:[{range:{start:document.positionAt(missing.end-1),end:document.positionAt(missing.end-1)},newText:', '+level}]});
     }
-    return result.map(f=>{
+    return result.filter((f,i,all)=>all.findIndex(other=>JSON.stringify(other.edits)===JSON.stringify(f.edits))===i).map(f=>{
       const action=new vscode.CodeAction(f.title,vscode.CodeActionKind.QuickFix);
+      action.isPreferred=Boolean(f.preferred);
       action.command={title:f.title,command:'arduinoLive.previewFix',arguments:[{...f,uri:document.uri.toString(),version}]};return action;
     });
   }

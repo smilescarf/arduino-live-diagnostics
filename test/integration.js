@@ -15,7 +15,8 @@ const { documentSync } = require('../src/document-sync');
 const { prepareSource } = require('../src/source-engine');
 const { fixLocation } = require('../src/fix-location');
 const {missingDigitalWrite,compilerArgumentMessage}=require('../src/authoring-core');
-const {compilerEdits}=require('../src/edit-preview');
+const {compilerEdits,applyTextEdits}=require('../src/edit-preview');
+const {punctuationPlan}=require('../src/punctuation');
 
 async function main() {
   const runDirectory=process.env.ARDUINO_INTEGRATION_RUN?'integration-'+process.env.ARDUINO_INTEGRATION_RUN.replace(/[^a-z0-9_-]/gi,'_'):'integration';
@@ -196,9 +197,22 @@ async function main() {
     const authoringRepair=waitDiagnostics(p=>p.diagnostics.length===0);
     notify('textDocument/didChange',{textDocument:{uri,version:10},contentChanges:[{text:authoringSource.replace('digitalWrite(LED_PIN);','digitalWrite(LED_PIN,HIGH);').replace('  servo.','  servo.write(90);')}]});
     await authoringRepair;
+    const asciiSource=authoringSource.replace('digitalWrite(LED_PIN);','digitalWrite(LED_PIN,HIGH);').replace('  servo.','  servo.write(90);');
+    const fullwidthSource=asciiSource.replace('digitalWrite(LED_PIN,HIGH);','millis（）； digitalWrite(LED_PIN,HIGH);');
+    const punctuationErrors=waitDiagnostics(p=>p.diagnostics.some(d=>d.severity===1));
+    notify('textDocument/didChange',{textDocument:{uri,version:11},contentChanges:[{text:fullwidthSource}]});
+    const fullwidthDiagnostics=(await punctuationErrors).diagnostics;
+    const symbolDiagnostic=fullwidthDiagnostics.find(d=>punctuationPlan(fullwidthSource,d.range));
+    assert.ok(symbolDiagnostic,'应收到全角语法符号附近的编译器诊断');
+    const punctuation=punctuationPlan(fullwidthSource,symbolDiagnostic.range);
+    const correctedSource=applyTextEdits({getText:()=>fullwidthSource},punctuation.edits);
+    assert.equal(correctedSource,asciiSource.replace('digitalWrite(LED_PIN,HIGH);','millis(); digitalWrite(LED_PIN,HIGH);'),'修复必须保留 millis(); 调用，而不是删分号或增加 ;;');
+    const punctuationRepair=waitDiagnostics(p=>!p.diagnostics.some(d=>d.severity===1));
+    notify('textDocument/didChange',{textDocument:{uri,version:12},contentChanges:[{text:correctedSource}]});
+    await punctuationRepair;
     assert.equal(fs.readFileSync(file, 'utf8'), valid, '磁盘上的文件不能发生变化');
     const result = { passed: true, fqbn, initialUnsavedDetected: true, windowsLineEndings: true, savedDuringTest: false, semanticMemberCompletion:true,unsavedPinCompletion:true,coreSignatureHelp:true,missingArgumentChinese:true,compilerFixPreview:true,errorLatencyMs, repairLatencyMs, syntaxLatencyMs,
-      syntaxDiagnostics: syntaxErrors.diagnostics.map(d => ({ message: d.message, line: d.range.start.line + 1 })),
+      fullwidthPunctuationRepair:true,syntaxDiagnostics: syntaxErrors.diagnostics.map(d => ({ message: d.message, line: d.range.start.line + 1 })),
       syntaxUnderline: { line: locatedSyntax.start.line + 1, startColumn: locatedSyntax.start.character + 1, endColumn: locatedSyntax.end.character + 1 },
       semicolonUnderline: { line: semicolonUnderline.start.line + 1, column: semicolonUnderline.start.character + 1 },
       diagnostics: errors.diagnostics.map(d => ({ message: d.message, line: d.range.start.line + 1 })) };

@@ -1,10 +1,10 @@
-# Arduino Live Diagnostics v0.4.1 安装说明
+# Arduino Live Diagnostics v0.4.2 安装说明
 
 这是公开测试版（alpha），提供未保存代码的实时诊断、常见错误中文说明、函数助手和 42 个实验模板。
 
 ## ZIP 内容
 
-- `arduino-live-diagnostics-0.4.1.vsix`：插件安装包。
+- `arduino-live-diagnostics-0.4.2.vsix`：插件安装包。
 - `source/`：完整项目源码、实验、文档与测试。
 - `SHA256SUMS.txt`：安装包 SHA-256 校验值。
 

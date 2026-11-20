@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Prioritize replacing fullwidth code punctuation over cascading compiler semicolon edits; preserve comments, literals and header names.
+- Filter redundant semicolon insertions and removal of complete function-call terminators while retaining for-header separator repairs.
+- Point syntax diagnostics at the relevant fullwidth punctuation and recheck after the previewed replacement.
+
 ## 0.4.1
 
 - Fix Theia Invalid argument errors by interpreting JSON diagnostic/edit positions without passing them to strict document Position APIs.

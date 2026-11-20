@@ -19,6 +19,7 @@ const { installLearning, compilerLibraries, includes, includeSignature } = requi
 const { prepareSource, writePrototypes } = require('./source-engine');
 const { fixLocation } = require('./fix-location');
 const { missingDigitalWrite, compilerArgumentMessage } = require('./authoring-core');
+const {punctuationPlan}=require('./punctuation');
 
 const sessions = new Map();
 const preparations = new Map();
@@ -153,9 +154,15 @@ async function startDocument(document, folder, sketch) {
           const originals=diagnostics.map(d=>client.code2ProtocolConverter.asDiagnostic(d));
           for (const diagnostic of diagnostics) {
             let located = diagnosticRange(document, diagnostic);
+            const punctuation=document&&punctuationPlan(document.getText(),diagnostic.range);
+            if(punctuation&&/expected|unexpected|invalid|extraneous|unicode|U\+FF|[（）［］｛｝；，：]/i.test(String(diagnostic.code)+' '+diagnostic.message)){
+              const symbol=punctuation.symbols.filter(s=>s.start.line===diagnostic.range.start.line).sort((a,b)=>Math.abs(a.start.character-diagnostic.range.start.character)-Math.abs(b.start.character-diagnostic.range.start.character))[0]||punctuation.symbols[0];
+              located={start:symbol.start,end:{line:symbol.start.line,character:symbol.start.character+1}};
+              diagnostic.message+='\n中文提示：'+punctuation.reason;
+            }
             const argumentHelp=document&&missingDigitalWrite(document.getText(),document.offsetAt(diagnostic.range.start),compilerArgumentMessage(diagnostic));
             if(argumentHelp){located={start:document.positionAt(argumentHelp.start),end:document.positionAt(argumentHelp.end)};diagnostic.message+='\n中文提示：'+argumentHelp.message;}
-            if (document && String(typeof diagnostic.code === 'object' ? diagnostic.code.value : diagnostic.code).startsWith('expected_semi')) {
+            if (document && !punctuation && String(typeof diagnostic.code === 'object' ? diagnostic.code.value : diagnostic.code).startsWith('expected_semi')) {
               try {
                 located = await fixLocation(document, diagnostic, client.code2ProtocolConverter.asUri(uri), params => client.sendRequest('textDocument/codeAction', params), client.code2ProtocolConverter.asDiagnostic(diagnostic)) || located;
               } catch (error) { output.appendLine(`保留编译器定位：${error.message}`); }
