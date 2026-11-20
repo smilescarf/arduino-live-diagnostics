@@ -12,6 +12,7 @@ test/**
 scripts/**
 releases/**
 pnpm-lock.yaml
+pnpm-workspace.yaml
 package-lock.json
 .gitignore
 **/*.log

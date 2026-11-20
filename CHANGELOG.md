@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Declare dependency build decisions for pnpm 11 so clean CI installs can proceed without an interactive approval prompt.
+- Validate Windows and Linux jobs independently during release checks.
+
 ## 0.3.0
 
 - Expand to 42 standalone experiments, mapping supplied courseware experiments and assignments to their source pages, with clearly marked supplemental experiments.

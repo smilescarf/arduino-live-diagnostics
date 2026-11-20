@@ -1,0 +1,6 @@
+# Packaging needs esbuild; signing and credential-store native modules are not
+# used when building a VSIX locally or in CI.
+allowBuilds:
+  esbuild@0.25.12: true
+  '@vscode/vsce-sign': false
+  keytar: false
