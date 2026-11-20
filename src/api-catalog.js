@@ -2,7 +2,7 @@
 
 const api = [
   ['pinMode', 'void pinMode(pin, mode)', '设置引脚模式：OUTPUT 输出、INPUT 输入、INPUT_PULLUP 内部上拉输入。', 'pinMode(${1:LED_PIN}, ${2:OUTPUT});'],
-  ['digitalWrite', 'void digitalWrite(pin, value)', '设置数字输出 HIGH 或 LOW。先用 pinMode(pin, OUTPUT) 配置；不会自动初始化引脚。', 'digitalWrite(${1:LED_PIN}, ${2:HIGH});'],
+  ['digitalWrite', 'void digitalWrite(pin, value)', '设置数字输出：HIGH 为高电平，LOW 为低电平，不直接等同于开/关。应按接线及模块的有效电平选择。先用 pinMode(pin, OUTPUT) 配置；不会自动初始化引脚。', 'digitalWrite(${1:LED_PIN}, ${2|HIGH,LOW|});'],
   ['digitalRead', 'int digitalRead(pin)', '读取 HIGH 或 LOW。INPUT_PULLUP 按键接地时，按下读到 LOW。', 'digitalRead(${1:BUTTON_PIN})'],
   ['map', 'long map(value, fromLow, fromHigh, toLow, toHigh)', '将整数按比例映射。输入区间两端必须不同；结果不会自动限幅，必要时再用 constrain。', 'map(${1:raw}, ${2:0}, ${3:1023}, ${4:0}, ${5:100})'],
   ['millis', 'unsigned long millis()', '启动后的毫秒计数。用 unsigned long now - previous 比较间隔，可处理计数回绕。', 'millis()'],

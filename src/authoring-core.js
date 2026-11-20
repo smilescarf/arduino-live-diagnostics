@@ -52,7 +52,7 @@ const parameterHints = {
 function parameters(item) {
   const labels=/\((.*)\)/.exec(item.signature)?.[1].split(',').map(x=>x.trim()).filter(Boolean)||[];
   return labels.map((label,index)=>({label,description:
-    item.name==='digitalWrite'&&index===1?'输出电平：HIGH 点亮高电平输出，LOW 关闭；实际 LED 有效电平取决于接线。':
+    item.name==='digitalWrite'&&index===1?'输出电平：HIGH 为高电平，LOW 为低电平。开关状态取决于接线和模块有效电平，例如低电平有效的继电器可能在 LOW 时吸合。':
     item.name==='pinMode'&&index===1?'OUTPUT 输出、INPUT 输入或 INPUT_PULLUP 内部上拉。':
     item.name==='map'&&index===0?'待映射的整数，例如 analogRead 的原始值；使用整数运算。':
     item.name==='timerBegin'?'定时器计数频率，单位 Hz；1000000 表示每微秒一个 tick。':

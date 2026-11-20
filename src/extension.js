@@ -218,7 +218,7 @@ async function startDocument(document, folder, sketch) {
     if (sessions.get(sketch) === entry) sessions.delete(sketch);
     try { await client.dispose(); } catch { /* Startup already failed. */ }
     cleanupSession(environment.tempDir);
-    output.appendLine(String(error));
+    output.appendLine(error.stack||String(error));
     setStatus('启动失败', String(error));
     const choice = await vscode.window.showErrorMessage('Arduino 实时诊断启动失败。请检查工具路径、开发板核心及日志。', '查看日志', '配置');
     if (choice === '查看日志') output.show();
@@ -379,11 +379,15 @@ function activate(context) {
   setStatus('等待 Arduino 工程');
   status.show();
   const safe = fn => (...args) => Promise.resolve().then(() => fn(...args)).catch(error => {
-    output.appendLine(String(error));
+    output.appendLine(error.stack||String(error));
     void vscode.window.showErrorMessage(`Arduino Live: ${error.message || error}`);
   });
   learning = installLearning(vscode, {
-    document: () => vscode.window.activeTextEditor?.document || vscode.workspace.textDocuments.find(document => document.uri.scheme === 'file' && /\.ino$/i.test(document.fileName)),
+    document: () => {
+      const active=vscode.window.activeTextEditor?.document;
+      return active?.uri.scheme==='file'?active:vscode.workspace.textDocuments.find(document=>document.uri.scheme==='file'&&/\.ino$/i.test(document.fileName));
+    },
+    log:message=>output.appendLine(message),
     fqbn: () => settings(activeUri()).fqbn,
     diagnostics: document => {
       const folder=vscode.workspace.getWorkspaceFolder(document.uri),sketch=folder&&findSketch(document.fileName,folder.uri.fsPath);

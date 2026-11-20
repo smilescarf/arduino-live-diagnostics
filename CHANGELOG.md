@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Fix Theia Invalid argument errors by interpreting JSON diagnostic/edit positions without passing them to strict document Position APIs.
+- Correct the four-argument quick-fix provider callback and allow choosing a document problem when the cursor or diff preview has no fix.
+- Describe HIGH/LOW as voltage levels; choose the active level according to wiring and module behavior rather than inferring on/off.
+
 ## 0.4.0
 
 - Add board-aware Chinese parameter help and real clangd completions for current unsaved buffers and library members.

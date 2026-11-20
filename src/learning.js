@@ -138,7 +138,7 @@ function installLearning(vscode, options) {
     if (!selected || selected.unavailable) return;
     if (selected.api) {
       const item = selected.api;
-      showDetails(item.name, `<pre>${escape(item.signature)}</pre><p>${escape(item.description)}</p><p>输入函数名或按 Ctrl+空格可选中文提示和参数占位符。原生签名/类型检查仍按当前开发板处理。</p><pre>${escape(item.snippet.replace(/\$\{\d+:([^}]+)\}/g, '$1'))}</pre>`);
+      showDetails(item.name, `<pre>${escape(item.signature)}</pre><p>${escape(item.description)}</p><p>输入函数名或按 Ctrl+空格可选中文提示和参数占位符。原生签名/类型检查仍按当前开发板处理。</p><pre>${escape(item.snippet.replace(/\$\{\d+:([^}]+)\}/g, '$1').replace(/\$\{\d+\|([^|]+)\|\}/g,(_m,choices)=>choices.split(',').join(' 或 ')))}</pre>`);
     } else if (selected.example) {
       const files = fs.readdirSync(selected.example).filter(file => /\.ino$/i.test(file));
       if (!files.length) { await vscode.window.showInformationMessage('该示例的主文件位于更深一层目录，请从 IDE 的文件 → 示例中打开。'); return; }

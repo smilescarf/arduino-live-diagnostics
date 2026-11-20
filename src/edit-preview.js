@@ -1,11 +1,21 @@
 'use strict';
+// LSP/command arguments are plain JSON, while Theia's document.offsetAt accepts
+// only its own Position instances. Interpret protocol positions as UTF-16 text
+// offsets here rather than passing them across that API boundary.
+function textOffset(text, position) {
+  if(!Number.isInteger(position?.line)||!Number.isInteger(position?.character)||position.line<0||position.character<0)throw Error('修改位置已失效');
+  const starts=[0],ends=[];
+  for(const m of text.matchAll(/\r\n|\r|\n/g)){ends.push(m.index);starts.push(m.index+m[0].length);}
+  ends.push(text.length);
+  if(position.line>=starts.length||position.character>ends[position.line]-starts[position.line])throw Error('修改位置已失效');
+  return starts[position.line]+position.character;
+}
 function applyTextEdits(document, edits) {
   const text=document.getText();
   const changes=edits.map(e=>{
     if(typeof e.newText!=='string')throw Error('无效修改内容');
-    const start=document.offsetAt(e.range.start),end=document.offsetAt(e.range.end);
-    const valid=p=>{const q=document.positionAt(document.offsetAt(p));return q.line===p.line&&q.character===p.character;};
-    if(!valid(e.range.start)||!valid(e.range.end)||end<start)throw Error('修改位置已失效');
+    const start=textOffset(text,e.range.start),end=textOffset(text,e.range.end);
+    if(end<start)throw Error('修改位置已失效');
     return {start,end,text:e.newText};
   }).sort((a,b)=>b.start-a.start||b.end-a.end);
   let previous=text.length+1,result=text;
@@ -52,4 +62,4 @@ function compilerEdits(actions, uri, version) {
   }
   return found.filter((f,i,a)=>a.findIndex(x=>JSON.stringify(x.edits)===JSON.stringify(f.edits))===i);
 }
-module.exports={applyTextEdits,compilerEdits,installPreview};
+module.exports={textOffset,applyTextEdits,compilerEdits,installPreview};

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {lex,callContext,parameters,missingDigitalWrite,advisoryFindings}=require('../src/authoring-core');
 const {planFragment}=require('../src/code-fragments');
-const {applyTextEdits,compilerEdits,installPreview}=require('../src/edit-preview');
+const {textOffset,applyTextEdits,compilerEdits,installPreview}=require('../src/edit-preview');
 const {availableApi}=require('../src/api-catalog');
 const {installAuthoring}=require('../src/authoring');
 class Range {
@@ -70,15 +70,16 @@ test('预览期间继续输入时不应用旧修改；取消和应用都不保�
  state.changeDuringPreview=false;state.choice='取消';assert.equal(await p.preview(change()),false);
  state.choice='应用修改';assert.equal(await p.preview(change()),true);assert.equal(state.applied,1);p.dispose();
 });
-function authoringHost(response){
+function authoringHost(response,overrides={}){
  const providers={},noop=()=>({dispose(){}});
  const vscode={Range,CodeActionKind:{QuickFix:'quickfix'},CompletionItemKind:{Variable:5,Constant:20,Function:2},
  CompletionItem:class{constructor(label,kind){this.label=label;this.kind=kind;}},MarkdownString:class{constructor(value){this.value=value;}},SnippetString:class{constructor(value){this.value=value;}},
+ CodeAction:class{constructor(title,kind){this.title=title;this.kind=kind;}},
  SignatureInformation:class{constructor(label,documentation){this.label=label;this.documentation=documentation;}},ParameterInformation:class{constructor(label,documentation){this.label=label;this.documentation=documentation;}},SignatureHelp:class{},
  workspace:{textDocuments:[],registerTextDocumentContentProvider:noop,onDidChangeTextDocument:noop,onDidOpenTextDocument:noop,onDidCloseTextDocument:noop,onDidChangeConfiguration:noop},
- commands:{registerCommand:noop},languages:{registerSignatureHelpProvider:(_s,p)=>{providers.signature=p;return noop();},registerCompletionItemProvider:(_s,p)=>{providers.completion=p;return noop();},registerCodeActionsProvider:noop,createDiagnosticCollection:noop}};
- const authoring=installAuthoring(vscode,{isSketch:()=>true,fqbn:()=> 'arduino:avr:uno',languageRequest:response},[]);
- return {providers,authoring};
+ commands:{registerCommand:noop},languages:{registerSignatureHelpProvider:(_s,p)=>{providers.signature=p;return noop();},registerCompletionItemProvider:(_s,p)=>{providers.completion=p;return noop();},registerCodeActionsProvider:(_s,p)=>{providers.fixes=p;return noop();},createDiagnosticCollection:noop}};
+ const authoring=installAuthoring(vscode,{isSketch:()=>true,fqbn:()=> 'arduino:avr:uno',languageRequest:response,...overrides},[]);
+ return {providers,authoring,vscode};
 }
 test('成员补全保留编译器语义结果，引脚变量优先，切板不返回 ESP32 API，旧版本结果被丢弃',async()=>{
  const h=authoringHost(async()=>({value:[{label:'LED_PIN',kind:5},{label:'counter',kind:5}]}));
@@ -89,3 +90,41 @@ test('成员补全保留编译器语义结果，引脚变量优先，切板不�
  const stale=authoringHost(async(doc)=>{doc.version++;return {value:[{label:'old'}]};});assert.deepEqual(await stale.providers.completion.provideCompletionItems(d,d.positionAt(d.text.length)),[]);stale.authoring.dispose();
 });
 module.exports={document};
+
+class StrictPosition {constructor(line,character){this.line=line;this.character=character;}}
+function strictDocument(text){
+ const d=document(text),offset=d.offsetAt.bind(d),position=d.positionAt.bind(d);
+ d.offsetAt=p=>{if(!(p instanceof StrictPosition))throw Error('Invalid argument');return offset(p);};
+ d.positionAt=n=>{const p=position(n);return new StrictPosition(p.line,p.character);};return d;
+}
+test('Theia 严格 Position 校验：JSON 修复位置、中文及 CRLF 不触发 Invalid argument',()=>{
+ const d=strictDocument('// 中文😀\r\nint value=0\r\n');
+ assert.throws(()=>d.offsetAt({line:1,character:11}),/Invalid argument/);
+ const edits=JSON.parse(JSON.stringify([{range:{start:d.positionAt(d.text.indexOf('0')+1),end:d.positionAt(d.text.indexOf('0')+1)},newText:';'}]));
+ assert.equal(applyTextEdits(d,edits),'// 中文😀\r\nint value=0;\r\n');
+ assert.equal(textOffset(d.text,{line:1,character:0}),d.text.indexOf('int'));
+ assert.throws(()=>textOffset(d.text,{line:1,character:12}),/位置已失效/);
+});
+test('快速修复遵循四参数宿主回调，并且菜单使用同一路径处理纯 JSON 诊断',async()=>{
+ const d=strictDocument('digitalWrite(LED_PIN);'),range=new Range(0,0,0,20),token={isCancellationRequested:false};
+ const record={display:range,protocol:{message:'Too few arguments to function call, expected 2, have 1',range:{start:{line:0,character:0},end:{line:0,character:12}}}};
+ let passedToken,executed;
+ const h=authoringHost(async(_d,_method,_params,t)=>{passedToken=t;return {raw:[],protocolUri:d.uri.toString()};},{diagnostics:()=>[record],document:()=>d});
+ const actions=await h.providers.fixes.provideCodeActions(d,range,{diagnostics:[]},token);
+ assert.equal(passedToken,token);assert.equal(actions.length,2);assert.match(actions[0].title,/HIGH/);
+ h.vscode.window={activeTextEditor:{document:d,selection:range},showQuickPick:async choices=>choices[0]};
+ h.vscode.commands.executeCommand=async(...args)=>{executed=args;};
+ await h.authoring.showFixes();assert.equal(executed[0],'arduinoLive.previewFix');
+ const transfer=JSON.parse(JSON.stringify(executed[1]));assert.equal(applyTextEdits(d,transfer.edits),'digitalWrite(LED_PIN, HIGH);');h.authoring.dispose();
+});
+test('高低电平说明不推断开关状态，预览焦点下仍可从原文选择问题并修复',async()=>{
+ const api=availableApi('arduino:avr:uno').find(a=>a.name==='digitalWrite');
+ assert.match(parameters(api)[1].description,/LOW.*低电平/);assert.doesNotMatch(parameters(api)[1].description,/HIGH 点亮|LOW 关闭/);
+ const d=strictDocument('digitalWrite(LED_PIN);'),range=new Range(0,0,0,20);
+ const record={display:range,protocol:{message:'Too few arguments to function call',range:{start:{line:0,character:0},end:{line:0,character:12}}}};
+ let picks=0,change;
+ const h=authoringHost(async()=>({raw:[],protocolUri:d.uri.toString()}),{diagnostics:()=>[record],document:()=>d});
+ h.vscode.window={activeTextEditor:{document:{uri:{scheme:'arduino-live-preview'}}},showQuickPick:async items=>{picks++;return items[0];}};
+ h.vscode.commands.executeCommand=async(_name,c)=>{change=c;};
+ await h.authoring.showFixes();assert.equal(picks,2);assert.match(change.title,/HIGH（高电平）/);assert.match(change.reason,/不能直接等同于开\/关/);h.authoring.dispose();
+});
